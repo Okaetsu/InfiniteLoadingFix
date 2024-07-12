@@ -6,13 +6,15 @@ It manually manages when to replicate things rather than replicating everything 
 
 This doesn't work on Linux since UE4SS doesn't support Linux yet!
 
+Make sure to backup your world before applying the mod. It should only causes visual glitches for clients at worst, but just in case.
+
 ## Installation
 
 1. Download the latest experimental version of UE4SS [here](https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental/UE4SS_v3.0.1-137-g6867a08.zip) or go to the experimental releases and find the .zip with `UE4SS_v3.0.1-137-g6867a08` in the name.
 
 2. Install UE4SS into the Win64 folder of your server
 
-3. Download the latest release of the mod
+3. Download the [latest release of the mod](https://github.com/Okaetsu/InfiniteLoadingFix/releases/tag/v0.2.0)
 
 4. Extract the mod folder into Pal\Binaries\Win64\Mods of your server
 
