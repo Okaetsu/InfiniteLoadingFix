@@ -29,11 +29,20 @@ struct CharacterRepData {
 // Keep track of players that have logged in during this session
 std::unordered_set<Palworld::FGuid> Players;
 
-// Store character data that should be replicated later
+// Keep track of Palbox Pals
+std::unordered_set<Palworld::FGuid> PalboxPals;
+
+// Store pal data that should be replicated later
 std::unordered_map<Palworld::FGuid, std::vector<CharacterRepData>> LateReplicationMap;
+
+// Store player data that should be replicated later
+std::unordered_map<Palworld::FGuid, CharacterRepData> LatePlayerReplicationMap;
 
 // Store character data that has already been replicated, TODO: Actually use this to remove stuff from the Array when it's not relevant?
 std::unordered_set<Palworld::FGuid> ReplicatedMap;
+
+// Set to true when the first Player connects.
+bool HasInitialized = false;
 
 // Signature stuff, expect them to break with updates
 void BeginScan()
@@ -107,7 +116,7 @@ void __stdcall AddRepCharacterParameter(UPalCharacterManagerReplicator* This, Pa
         RepData.Parameter = Parameter;
 
         auto UId = Parameter->GetIndividualId().PlayerUId;
-        LateReplicationMap[UId].push_back(RepData);
+        LatePlayerReplicationMap[UId] = RepData;
     }
     else
     {
@@ -119,20 +128,23 @@ void __stdcall AddRepCharacterParameter(UPalCharacterManagerReplicator* This, Pa
         else
         {
             auto UId = SaveParameter.OwnerPlayerUId;
-            if (Players.count(UId))
+
+            if (HasInitialized)
             {
-                // Player is online so we assume the Pal was either captured or collected from the ground
+                // Here we assume the Pal was collected from the ground.
                 AddRepCharacterParameter_Hook.call(This, RequestGUID, ID, Parameter);
-                return;
             }
+            else
+            {
+                // If it's a player owned NPC, replicate it once the owning player actually connects to the server
+                auto RepData = CharacterRepData{};
+                RepData.RequestGUID = *RequestGUID;
+                RepData.ID = *ID;
+                RepData.Parameter = Parameter;
 
-            // If it's a player owned NPC, replicate it once the owning player actually connects to the server
-            auto RepData = CharacterRepData{};
-            RepData.RequestGUID = *RequestGUID;
-            RepData.ID = *ID;
-            RepData.Parameter = Parameter;
-
-            LateReplicationMap[UId].push_back(RepData);
+                LateReplicationMap[UId].push_back(RepData);
+                PalboxPals.insert(ID->InstanceId);
+            }
         }
     }
 }
@@ -142,25 +154,30 @@ void __stdcall ProcessJoinedPlayer_InServer(APalPlayerState* PlayerState)
 {
     auto PlayerUId = PlayerState->GetLoginTryingPlayerUId_InServer();
 
+    HasInitialized = true;
+
     if (!Players.count(PlayerUId))
     {
         Players.insert(PlayerUId);
 
-        // Store a list of replication data to remove from LateReplicationMap after we're done with those particular entries
-        std::vector<Palworld::FGuid> ReplDataToRemove;
+        auto PlayerDataIterator = LatePlayerReplicationMap.find(PlayerUId);
+        if (PlayerDataIterator != LatePlayerReplicationMap.end())
+        {
+            // Intentionally making a copy here so it doesn't explode when passed into the params
+            auto PlayerData = PlayerDataIterator->second;
+            AddRepCharacterParameter_Hook.call(PalCharacterManagerReplicator, &PlayerData.RequestGUID, &PlayerData.ID, PlayerData.Parameter);
+        }
+
+        LatePlayerReplicationMap.erase(PlayerUId);
 
         // Process the list of things to replicate related to this player which is the player itself and their owned Pals
         for (auto& ReplData : LateReplicationMap[PlayerUId])
         {
             AddRepCharacterParameter_Hook.call(PalCharacterManagerReplicator, &ReplData.RequestGUID, &ReplData.ID, ReplData.Parameter);
-            ReplDataToRemove.push_back(PlayerUId);
         }
 
         // Finally remove the data we just processed so we don't replicate them again and create duplicates
-        for (auto& UId : ReplDataToRemove)
-        {
-            LateReplicationMap.erase(UId);
-        }
+        LateReplicationMap.erase(PlayerUId);
     }
 
     // Jump back to the original function
@@ -173,11 +190,9 @@ public:
     InfiniteLoadingFix() : CppUserModBase()
     {
         ModName = STR("InfiniteLoadingFix");
-        ModVersion = STR("0.1.0");
-        ModDescription = STR("WIP, still needs some improving, but it removes the issue atleast.");
+        ModVersion = STR("0.2.0");
+        ModDescription = STR("Fixes the Infinite Loading Screen that happens when the server reaches roughly 40k+ total Pals");
         ModAuthors = STR("Okaetsu");
-
-        printf("InfiniteLoadingFix v0.1.0 by Okaetsu\n");
     }
 
     ~InfiniteLoadingFix() override
@@ -186,6 +201,8 @@ public:
 
     auto on_unreal_init() -> void override
     {
+        wprintf(STR("%s v%s by %s\n"), ModName.c_str(), ModVersion.c_str(), ModAuthors.c_str());
+
         BeginScan();
 
         AddRepCharacterParameter_Hook = safetyhook::create_inline(reinterpret_cast<void*>(UPalCharacterManagerReplicator::AddRepCharacterParameter),
@@ -195,7 +212,6 @@ public:
             reinterpret_cast<void*>(ProcessJoinedPlayer_InServer));
     }
 };
-
 
 #define INFINITELOADINGFIX_API __declspec(dllexport)
 extern "C"
