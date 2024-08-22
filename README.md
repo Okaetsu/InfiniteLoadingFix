@@ -1,4 +1,4 @@
-# Infinite Loading Screen Fix
+# Infinite Loading Screen Fix (OBSOLETE, OFFICIALLY FIXED IN 22th August 2024)
 
 Hello! This is a workaround fix for the Infinite Loading Screen bug that's present on many bigger community servers. There may be some side effects, however from my testing there didn't seem to be any.
 
